@@ -1,0 +1,27 @@
+{
+    "manifest_version": 3,
+    "name": "QuizGPT",
+    "version": "0.1",
+    "description": "Auto-fill quiz answers using ChatGPT",
+    "permissions": [
+        "scripting",
+        "activeTab",
+        "storage"
+    ],
+    "action": {
+        "default_title": "Start QuizGPT",
+        "default_icon": {
+            "256": "assets/icon.png"
+        }
+    },
+    "options_page": "options.html",
+    "background": {
+        "service_worker": "background.js"
+    },
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "icons": {
+        "256": "assets/icon.png"
+    }
+}

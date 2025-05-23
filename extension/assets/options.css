@@ -1,0 +1,21 @@
+
+body {
+    font-family: sans-serif;
+    max-width: 500px;
+    margin: 40px auto;
+}
+
+label,
+textarea {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+}
+
+textarea {
+    height: 80px;
+}
+
+button {
+    padding: 8px 16px;
+}
