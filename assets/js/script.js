@@ -2,7 +2,7 @@ $(document).ready(function () {
     let userAgent = navigator.userAgent.toLowerCase();
     let isWindowsDesktop = userAgent.includes("windows") && !/mobile|android|iphone|ipad/i.test(userAgent);
     let isLinuxDesktop = userAgent.includes("linux") && !/mobile|android|iphone|ipad/i.test(userAgent);
-    let latestReleaseURL = "https://github.com/ungaul/clip-gpt/releases/latest";
+    let latestReleaseURL = "https://github.com/ungaul/quiz-gpt/releases/latest";
 
     if (isWindowsDesktop) {
         $("#download")

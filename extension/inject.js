@@ -1,207 +1,221 @@
 const OPENAI_API_KEY = window.__OPENAI_API_KEY__;
-
 if (!OPENAI_API_KEY) {
-    alert("API key not found.");
+    showNotification("API key not found.", "error");
     throw new Error("API key missing.");
 }
-
 const QUESTION_TYPES = {
     TEXT: 'text',
     CHECKBOX: 'checkbox',
     RADIO: 'radio'
 };
-
 function isElementUsable(el) {
     const style = window.getComputedStyle(el);
     return !el.disabled && !el.readOnly && el.offsetParent !== null && style.visibility !== 'hidden';
 }
-
-function findQuestionText(element) {
-    const textSelectors = ['.qtext', '[class*="question-text"]', '[class*="prompt"]', 'h1, h2, h3, h4, h5, h6', 'p', 'div'];
-    for (const selector of textSelectors) {
-        const elements = element.querySelectorAll(selector);
-        for (const el of elements) {
-            const text = el.textContent.trim();
-            if (text && text.length > 5 && text.length < 1000 && !el.querySelector('input')) {
-                return text;
-            }
-        }
-    }
-    return null;
-}
-
-function findInputs(element) {
-    const inputs = [];
-    const answerBlocks = element.querySelectorAll('.ablock, fieldset, [class*="answer"]');
-    answerBlocks.forEach(block => {
-        const allInputs = block.querySelectorAll('input, textarea, [contenteditable="true"]');
-        allInputs.forEach(input => {
-            if (!isElementUsable(input)) return;
-
-            if (input.type === 'text' || input.tagName === 'TEXTAREA' || input.getAttribute('contenteditable') === 'true') {
-                inputs.push({ element: input, type: QUESTION_TYPES.TEXT });
-            } else if (input.type === 'checkbox' || input.type === 'radio') {
-                const label = findLabel(input);
-                inputs.push({ element: input, type: input.type, label });
-            }
-        });
-    });
-    return inputs;
-}
-
 function findLabel(input) {
-    const id = input.id;
-    if (id) {
-        const label = document.querySelector(`label[for="${id}"]`);
-        if (label) return label.textContent.trim();
+    if (input.id) {
+        const l = document.querySelector(`label[for="${input.id}"]`);
+        if (l) return l.textContent.trim();
     }
-    const parent = input.parentElement;
-    if (parent) {
-        const label = parent.querySelector('label');
-        if (label) return label.textContent.trim();
-        const text = Array.from(parent.childNodes).filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.textContent.trim()).join(' ').trim();
-        if (text) return text;
+    const p = input.parentElement;
+    if (p) {
+        const l = p.querySelector('label');
+        if (l) return l.textContent.trim();
+        const txt = Array.from(p.childNodes)
+            .filter(n => n.nodeType === Node.TEXT_NODE)
+            .map(n => n.textContent.trim())
+            .join(' ')
+            .trim();
+        if (txt) return txt;
     }
-    const nextSibling = input.nextElementSibling;
-    if (nextSibling && nextSibling.nodeType === Node.TEXT_NODE) {
-        return nextSibling.textContent.trim();
-    }
+    const ns = input.nextSibling;
+    if (ns && ns.nodeType === Node.TEXT_NODE) return ns.textContent.trim();
     return '';
 }
-
-function hasPreexistingAnswer(inputs) {
-    return inputs.some(input => {
-        if (input.type === QUESTION_TYPES.TEXT) {
-            return input.element.value.trim().length > 0;
-        } else if (input.type === 'checkbox' || input.type === 'radio') {
-            return input.element.checked;
-        }
-        return false;
-    });
-}
-
-function findQuestionBlocks() {
-    const blocks = [];
-    const questionSelectors = ['.que', '[id^="question-"]', '[class*="question"]', 'div[class*="quiz"]', 'form[class*="quiz"]'];
-    for (const selector of questionSelectors) {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(element => {
-            const questionText = findQuestionText(element);
-            const inputs = findInputs(element);
-            if (questionText && inputs.length > 0 && !hasPreexistingAnswer(inputs)) {
-                blocks.push({ element, questionText, inputs });
+function getQuizBlocks() {
+    const candidates = Array.from(document.querySelectorAll('input, textarea, select'));
+    const blocks = new Set();
+    candidates.forEach(el => {
+        let node = el;
+        while (node && node !== document.body) {
+            if (
+                node.querySelectorAll('input, textarea, select').length > 0 &&
+                node.textContent.trim().length > 20
+            ) {
+                blocks.add(node);
+                break;
             }
+            node = node.parentElement;
+        }
+    });
+    return Array.from(blocks);
+}
+function extractBlockData(block) {
+    const textEls = Array.from(block.querySelectorAll('p,h1,h2,h3,h4,h5,h6,legend,div'))
+        .filter(el => el.textContent.trim().length > 10 && !el.querySelector('input, textarea, select'));
+    const questionText = textEls.length ? textEls[0].textContent.trim() : '';
+    const images = Array.from(block.querySelectorAll('img')).map(img => img.src);
+    const inputs = Array.from(block.querySelectorAll('input:not([type=hidden]), textarea, select'))
+        .filter(isElementUsable)
+        .map(el => {
+            const type = el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.type === 'text'
+                ? QUESTION_TYPES.TEXT
+                : el.type;
+            const label = findLabel(el);
+            return { element: el, type, label };
         });
-    }
-    console.log(`Found ${blocks.length} unanswered question blocks`);
-    return blocks;
+    return { block, questionText, images, inputs };
 }
-
-async function typeHumanLike(element, text) {
-    const typingSpeed = Math.random() * 50 + 50;
-    const mistakes = Math.random() < 0.1;
-    if (mistakes) {
-        const mistakeIndex = Math.floor(Math.random() * text.length);
-        const mistakeChar = String.fromCharCode(text.charCodeAt(mistakeIndex) + 1);
-        element.value = text.substring(0, mistakeIndex) + mistakeChar;
-        await new Promise(resolve => setTimeout(resolve, typingSpeed * 2));
-        element.value = text.substring(0, mistakeIndex);
-        await new Promise(resolve => setTimeout(resolve, typingSpeed));
-    }
-    for (let i = 0; i < text.length; i++) {
-        element.value = text.substring(0, i + 1);
-        await new Promise(resolve => setTimeout(resolve, typingSpeed));
-    }
-}
-
-function formatQuestionForOpenAI(question) {
-    let content = `You are a student answering a quiz question. Do not use any formatting like bold, bullet points, or markdown. Write casually and naturally like a student would. Do not restate the question.\n\n`;
-    content += `Question: ${question.text}\nType: ${question.type}\n`;
-    if (question.type !== QUESTION_TYPES.TEXT) {
-        content += 'Choices:\n';
-        question.inputs.forEach((input, index) => {
-            content += `${String.fromCharCode(65 + index)}: ${input.label}\n`;
-        });
-        content += '\nGive the letter(s) of the best choice(s), like "A" or "B, D". Keep it simple.';
-    } else {
-        content += 'Give a short natural answer in one or two sentences.';
-    }
-    return { role: "user", content };
-}
-
-async function getAnswerFromOpenAI(question) {
-    try {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o",
-                messages: [formatQuestionForOpenAI(question)],
-                temperature: 0.7,
-                max_tokens: 300
-            })
-        });
-        const data = await response.json();
-        const result = data.choices[0].message.content;
-        console.log(`Answer received: ${result}`);
-        return result;
-    } catch (error) {
-        console.error('Error getting answer from OpenAI:', error);
-        return null;
-    }
-}
-
-async function fillAnswers(answers) {
-    for (const answer of answers) {
-        console.log(`Filling answer for question type ${answer.type}`);
-        if (answer.type === QUESTION_TYPES.TEXT) {
-            await typeHumanLike(answer.inputs[0].element, answer.value);
+function typeLike(el, text, start = 0) {
+    let p = Promise.resolve();
+    for (let j = start; j < text.length; j++) {
+        const char = text[j];
+        let delay;
+        if (char === ' ') {
+            delay = 100 + Math.random() * 150;
+        } else if (/[.?!]/.test(char) && (j === text.length - 1 || /\s/.test(text[j + 1]))) {
+            delay = 250 + Math.random() * 300;
         } else {
-            const selectedOptions = answer.value.split(',').map(letter => letter.trim().toUpperCase());
-            answer.inputs.forEach((input, i) => {
-                if (selectedOptions.includes(String.fromCharCode(65 + i))) {
-                    input.element.checked = true;
-                }
+            delay = 30 + Math.random() * 50;
+        }
+        p = p.then(() => {
+            el.value = text.slice(0, j + 1);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return new Promise(r => setTimeout(r, delay));
+        });
+    }
+    return p;
+}
+function typeHumanLike(el, text) {
+    const makeMistake = Math.random() < 0.1;
+    if (makeMistake && text.length > 3) {
+        const i = Math.floor(Math.random() * (text.length - 2)) + 1;
+        const wrongChar = String.fromCharCode(text.charCodeAt(i) + 1);
+        el.value = text.slice(0, i) + wrongChar;
+        return new Promise(r => setTimeout(r, 100 + Math.random() * 200)).then(() => {
+            el.value = text.slice(0, i);
+            return new Promise(r2 => setTimeout(r2, 100 + Math.random() * 150));
+        }).then(() => typeLike(el, text, i));
+    }
+    return typeLike(el, text, 0);
+}
+function formatQuestionForOpenAI(q) {
+    let c = `You are a student answering a quiz question. Write casually and naturally like a student would. Do not restate the question.\n\n`;
+    if (q.images.length) c += `[Image provided]\n`;
+    c += `Question: ${q.questionText}\nType: ${q.inputs[0]?.type}\n`;
+    if (q.inputs[0]?.type !== QUESTION_TYPES.TEXT) {
+        c += 'Choices:\n';
+        q.inputs.forEach((i, idx) => {
+            c += `${String.fromCharCode(65 + idx)}: ${i.label}\n`;
+        });
+        c += '\nGive the letter(s) of the best choice(s).';
+    } else {
+        c += 'Give a short natural answer in one or two sentences.';
+    }
+    return { role: 'user', content: c };
+}
+async function getAnswerFromOpenAI(q) {
+    const msg = [formatQuestionForOpenAI(q)];
+    const body = {
+        model: 'gpt-4o',
+        messages: msg,
+        temperature: 0.7,
+        max_tokens: 2000
+    };
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${OPENAI_API_KEY}`
+        },
+        body: JSON.stringify(body)
+    });
+    const js = await res.json();
+    return js.choices?.[0]?.message?.content || '';
+}
+async function fillAnswers(answers) {
+    for (const a of answers) {
+        if (a.type === QUESTION_TYPES.TEXT) {
+            await typeHumanLike(a.element, a.value);
+        } else {
+            const sels = a.value.split(',').map(x => x.trim().toUpperCase());
+            a.inputs.forEach((inp, i) => {
+                if (sels.includes(String.fromCharCode(65 + i))) inp.element.checked = true;
             });
         }
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 1000 + 500));
+        await new Promise(r => setTimeout(r, Math.random() * 1000 + 500));
     }
 }
+function showNotification(message, type = "info") {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        padding: 12px 24px;
+        border-radius: 4px;
+        color: white;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+        z-index: 100000;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        animation: slideIn 0.3s ease-out;
+    `;
 
+    switch(type) {
+        case "error":
+            notification.style.backgroundColor = "#dc3545";
+            break;
+        default:
+            notification.style.backgroundColor = "#17a2b8";
+    }
+
+    notification.textContent = message;
+    document.body.appendChild(notification);
+
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
+
+    setTimeout(() => {
+        notification.style.animation = "fadeOut 0.3s ease-out";
+        setTimeout(() => notification.remove(), 300);
+    }, 50000);
+}
 async function processQuiz() {
-    const blocks = findQuestionBlocks();
+    const blocks = getQuizBlocks().map(extractBlockData);
     if (blocks.length === 0) {
-        alert('No usable quiz questions found on this page.');
+        showNotification("No quiz questions found on this page.", "error");
         return;
     }
 
     const answers = [];
-    for (const block of blocks) {
-        try {
-            const question = {
-                text: block.questionText,
-                type: block.inputs[0].type,
-                inputs: block.inputs
-            };
-            console.log(`Processing question: ${question.text}`);
-            const answer = await getAnswerFromOpenAI(question);
-            if (answer) {
-                answers.push({
-                    type: question.type,
-                    value: answer,
-                    inputs: question.inputs
-                });
-            }
-        } catch (error) {
-            console.error('Error processing question:', error);
-            break;
+    for (const q of blocks) {
+        if (!q.questionText || !q.inputs.length) {
+            continue;
         }
+        const ans = await getAnswerFromOpenAI(q);
+        if (!ans) {
+            showNotification("Failed to get answer from OpenAI.", "error");
+            continue;
+        }
+        answers.push({ type: q.inputs[0].type, inputs: q.inputs, element: q.inputs[0].element, value: ans });
+    }
+
+    if (answers.length === 0) {
+        showNotification("No answers could be generated.", "error");
+        return;
     }
 
     await fillAnswers(answers);
 }
-
 processQuiz();
