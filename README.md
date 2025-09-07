@@ -13,7 +13,7 @@ I currently lack several platforms to try and improve the extension, so if you a
 
 ## How To Use
 
-1. Install the extension from the [Chrome Web Store](#)
+1. Install the extension
 2. Go to the extension’s **Options page**, paste your **OpenAI API key**.
 3. Open a quiz page (Moodle or similar).
 4. Click on the extension to start answering!
